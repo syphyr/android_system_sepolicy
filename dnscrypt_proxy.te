@@ -24,6 +24,7 @@ allow dnscrypt_proxy toolbox_exec:file rx_file_perms;
 allow dnscrypt_proxy property_socket:sock_file write;
 allow dnscrypt_proxy self:capability { net_admin net_raw sys_ptrace dac_override chown };
 allow dnscrypt_proxy self:capability2 block_suspend;
+allow dnscrypt_proxy self:netlink_route_socket { create_socket_perms nlmsg_read };
 allow dnscrypt_proxy self:rawip_socket create_socket_perms;
 allow dnscrypt_proxy self:tcp_socket { create_socket_perms listen accept };
 allow dnscrypt_proxy self:udp_socket create_socket_perms;
