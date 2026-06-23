@@ -108,10 +108,6 @@ allow untrusted_app sysfs_hwrandom:file r_file_perms;
 allow untrusted_app preloads_data_file:dir r_dir_perms;
 allow untrusted_app preloads_data_file:file r_file_perms;
 
-# Programs such as Tor attempt access to own tcp socket
-# ioctl. Suppress these harmless denials when they occur.
-dontaudit untrusted_app self:tcp_socket ioctl;
-
 ###
 ### neverallow rules
 ###

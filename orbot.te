@@ -1,0 +1,185 @@
+###
+### Orbot selinux rules
+###
+### This file defines the rules for orbot_domain.
+###
+### It is an (adapted) copy of untrusted_app.te, but with access to
+### proc_net, which was removed from untrusted_app.te
+### A non-fitting neverallow rule was also removed
+###
+### orbot_domain includes all the appdomain rules, plus the
+### additional following rules:
+###
+
+type orbot_domain, domain;
+app_domain(orbot_domain)
+net_domain(orbot_domain)
+bluetooth_domain(orbot_domain)
+
+# Some apps ship with shared libraries and binaries that they write out
+# to their sandbox directory and then execute.
+allow orbot_domain app_data_file:file { rx_file_perms execmod };
+
+# ASEC
+allow orbot_domain asec_apk_file:file r_file_perms;
+allow orbot_domain asec_apk_file:dir r_dir_perms;
+# Execute libs in asec containers.
+allow orbot_domain asec_public_file:file { execute execmod };
+
+# Allow the allocation and use of ptys
+# Used by: https://play.google.com/store/apps/details?id=jackpal.androidterm
+create_pty(orbot_domain)
+
+# Used by Finsky / Android "Verify Apps" functionality when
+# running "adb install foo.apk".
+# TODO: Long term, we don't want apps probing into shell data files.
+# Figure out a way to remove these rules.
+allow orbot_domain shell_data_file:file r_file_perms;
+allow orbot_domain shell_data_file:dir r_dir_perms;
+
+# Read and write system app data files passed over Binder.
+# Motivating case was /data/data/com.android.settings/cache/*.jpg for
+# cropping or taking user photos.
+allow orbot_domain system_app_data_file:file { read write getattr };
+
+#
+# Rules migrated from old app domains coalesced into orbot_domain.
+# This includes what used to be media_app, shared_app, and release_app.
+#
+
+# Access to /data/media.
+allow orbot_domain media_rw_data_file:dir create_dir_perms;
+allow orbot_domain media_rw_data_file:file create_file_perms;
+
+# Traverse into /mnt/media_rw for bypassing FUSE daemon
+# TODO: narrow this to just MediaProvider
+allow orbot_domain mnt_media_rw_file:dir search;
+
+# allow cts to query all services
+allow orbot_domain servicemanager:service_manager list;
+
+allow orbot_domain audioserver_service:service_manager find;
+allow orbot_domain cameraserver_service:service_manager find;
+allow orbot_domain drmserver_service:service_manager find;
+allow orbot_domain mediaserver_service:service_manager find;
+allow orbot_domain mediaextractor_service:service_manager find;
+allow orbot_domain mediacodec_service:service_manager find;
+allow orbot_domain mediadrmserver_service:service_manager find;
+allow orbot_domain nfc_service:service_manager find;
+allow orbot_domain radio_service:service_manager find;
+allow orbot_domain surfaceflinger_service:service_manager find;
+allow orbot_domain app_api_service:service_manager find;
+
+# Allow GMS core to access perfprofd output, which is stored
+# in /data/misc/perfprofd/. GMS core will need to list all
+# data stored in that directory to process them one by one.
+userdebug_or_eng(`
+  allow orbot_domain perfprofd_data_file:file r_file_perms;
+  allow orbot_domain perfprofd_data_file:dir r_dir_perms;
+')
+
+# gdbserver for ndk-gdb ptrace attaches to app process.
+allow orbot_domain self:process ptrace;
+
+# Programs routinely attempt to scan through /system, looking
+# for files. Suppress the denials when they occur.
+dontaudit orbot_domain exec_type:file getattr;
+
+# TODO: switch to meminfo service
+allow orbot_domain proc_meminfo:file r_file_perms;
+
+# https://code.google.com/p/chromium/issues/detail?id=586021
+allow orbot_domain proc:file r_file_perms;
+
+# access /proc/net pseudo-filesystem
+r_dir_file(orbot_domain, proc_net)
+
+# Tor attempts access to own tcp socket ioctl
+allow orbot_domain self:tcp_socket ioctl;
+
+# Cts: HwRngTest
+allow orbot_domain sysfs_hwrandom:dir search;
+allow orbot_domain sysfs_hwrandom:file r_file_perms;
+
+# Allow apps to view preloaded content
+allow orbot_domain preloads_data_file:dir r_dir_perms;
+allow orbot_domain preloads_data_file:file r_file_perms;
+
+# Programs such as Tor attempt access to own tcp socket
+# ioctl. Suppress these harmless denials when they occur.
+dontaudit orbot_domain self:tcp_socket ioctl;
+
+###
+### neverallow rules
+###
+
+# Receive or send uevent messages.
+neverallow orbot_domain domain:netlink_kobject_uevent_socket *;
+
+# Receive or send generic netlink messages
+neverallow orbot_domain domain:netlink_socket *;
+
+# Too much leaky information in debugfs. It's a security
+# best practice to ensure these files aren't readable.
+neverallow orbot_domain debugfs_type:file read;
+
+# Do not allow untrusted apps to register services.
+# Only trusted components of Android should be registering
+# services.
+neverallow orbot_domain service_manager_type:service_manager add;
+
+# Do not allow orbot_domains to connect to the property service
+# or set properties. b/10243159
+neverallow orbot_domain property_socket:sock_file write;
+neverallow orbot_domain init:unix_stream_socket connectto;
+neverallow orbot_domain property_type:property_service set;
+
+# Do not allow orbot_domain to be assigned mlstrustedsubject.
+# This would undermine the per-user isolation model being
+# enforced via levelFrom=user in seapp_contexts and the mls
+# constraints.  As there is no direct way to specify a neverallow
+# on attribute assignment, this relies on the fact that fork
+# permission only makes sense within a domain (hence should
+# never be granted to any other domain within mlstrustedsubject)
+# and orbot_domain is allowed fork permission to itself.
+neverallow orbot_domain mlstrustedsubject:process fork;
+
+# Do not allow orbot_domain to hard link to any files.
+# In particular, if orbot_domain links to other app data
+# files, installd will not be able to guarantee the deletion
+# of the linked to file. Hard links also contribute to security
+# bugs, so we want to ensure orbot_domain never has this
+# capability.
+neverallow orbot_domain file_type:file link;
+
+# Do not allow orbot_domain to access network MAC address file
+neverallow orbot_domain sysfs_mac_address:file no_rw_file_perms;
+
+# Restrict socket ioctls. Either 1. disallow privileged ioctls, 2. disallow the
+# ioctl permission, or 3. disallow the socket class.
+neverallowxperm orbot_domain domain:{ rawip_socket tcp_socket udp_socket } ioctl priv_sock_ioctls;
+neverallow orbot_domain *:{ netlink_route_socket netlink_selinux_socket } ioctl;
+neverallow orbot_domain *:{
+  socket netlink_socket packet_socket key_socket appletalk_socket
+  netlink_firewall_socket netlink_tcpdiag_socket netlink_nflog_socket
+  netlink_xfrm_socket netlink_audit_socket netlink_ip6fw_socket
+  netlink_dnrt_socket netlink_kobject_uevent_socket tun_socket
+  netlink_iscsi_socket netlink_fib_lookup_socket netlink_connector_socket
+  netlink_netfilter_socket netlink_generic_socket netlink_scsitransport_socket
+  netlink_rdma_socket netlink_crypto_socket
+} *;
+
+# Do not allow orbot_domain access to /cache
+neverallow orbot_domain { cache_file cache_recovery_file }:dir ~{ r_dir_perms };
+neverallow orbot_domain { cache_file cache_recovery_file }:file ~{ read getattr };
+
+# Do not allow orbot_domain to set system properties.
+neverallow orbot_domain property_socket:sock_file write;
+neverallow orbot_domain property_type:property_service set;
+
+# Do not allow orbot_domain to directly open tun_device
+neverallow orbot_domain tun_device:chr_file open;
+
+# Only allow appending to /data/anr/traces.txt (b/27853304, b/18340553)
+neverallow orbot_domain anr_data_file:file ~{ open append };
+neverallow orbot_domain anr_data_file:dir ~search;
