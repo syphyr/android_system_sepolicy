@@ -96,6 +96,7 @@ r_dir_file(orbot_domain, proc_net)
 
 # Tor attempts access to own tcp socket ioctl
 allow orbot_domain self:tcp_socket ioctl;
+allowxperm orbot_domain self:tcp_socket ioctl { 0x894b };
 
 # Cts: HwRngTest
 allow orbot_domain sysfs_hwrandom:dir search;
@@ -104,10 +105,6 @@ allow orbot_domain sysfs_hwrandom:file r_file_perms;
 # Allow apps to view preloaded content
 allow orbot_domain preloads_data_file:dir r_dir_perms;
 allow orbot_domain preloads_data_file:file r_file_perms;
-
-# Programs such as Tor attempt access to own tcp socket
-# ioctl. Suppress these harmless denials when they occur.
-dontaudit orbot_domain self:tcp_socket ioctl;
 
 ###
 ### neverallow rules
@@ -157,7 +154,6 @@ neverallow orbot_domain sysfs_mac_address:file no_rw_file_perms;
 
 # Restrict socket ioctls. Either 1. disallow privileged ioctls, 2. disallow the
 # ioctl permission, or 3. disallow the socket class.
-neverallowxperm orbot_domain domain:{ rawip_socket tcp_socket udp_socket } ioctl priv_sock_ioctls;
 neverallow orbot_domain *:{ netlink_route_socket netlink_selinux_socket } ioctl;
 neverallow orbot_domain *:{
   socket netlink_socket packet_socket key_socket appletalk_socket
